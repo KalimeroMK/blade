@@ -113,12 +113,47 @@ class Blade implements FactoryContract
 
     protected function setupContainer(array $viewPaths, string $cachePath)
     {
+        // Регистрирање на основни сервиси
         $this->container->bindIf('files', fn () => new Filesystem);
         $this->container->bindIf('events', fn () => new Dispatcher);
         $this->container->bindIf('config', fn () => new Repository([
             'view.paths' => $viewPaths,
             'view.compiled' => $cachePath,
         ]));
+
+        // Регистрирање на BladeCompiler
+        $this->container->bindIf('blade.compiler', function ($container) {
+            return new BladeCompiler(
+                $container->get('files'),
+                $container->get('config')->get('view.compiled')
+            );
+        });
+
+        // Регистрирање на EngineResolver (потребно за Blade)
+        $this->container->bindIf('view.engine.resolver', function () {
+            $resolver = new \Illuminate\View\Engines\EngineResolver();
+            $resolver->register('blade', function () {
+                return new \Illuminate\View\Engines\CompilerEngine($this->container->get('blade.compiler'));
+            });
+
+            return $resolver;
+        });
+
+        // Регистрирање на ViewFactory
+        $this->container->bindIf('view.finder', function ($container) {
+            return new \Illuminate\View\FileViewFinder(
+                $container->get('files'),
+                $container->get('config')->get('view.paths')
+            );
+        });
+
+        $this->container->bindIf('view', function ($container) {
+            return new ViewFactory(
+                $container->get('view.engine.resolver'),
+                $container->get('view.finder'),
+                $container->get('events')
+            );
+        });
 
         Facade::setFacadeApplication($this->container);
     }
